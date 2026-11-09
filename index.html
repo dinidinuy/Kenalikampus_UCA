@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kenali Kampus: Pengenalan Benda dengan Kamera</title>
+<style>
+:root{--ink:#12263a;--paper:#f3f7f5;--leaf:#2b7a5a;--mark:#f2c94c;--red:#c93c3c;--line:#cfdcd6;--card:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--ink:#e6efe9;--paper:#0f1c24;--leaf:#5cc79a;--line:#264050;--card:#16293a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,sans-serif}
+header{padding:28px 20px 8px;max-width:960px;margin:auto}
+h1{font:700 clamp(1.6rem,5vw,2.4rem)/1.1 Georgia,serif;margin:0 0 6px}
+header p{margin:0;max-width:60ch}
+nav{display:flex;gap:6px;max-width:960px;margin:16px auto 0;padding:0 20px}
+nav button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;cursor:pointer;border-radius:8px 8px 0 0}
+nav button[aria-selected=true]{background:var(--leaf);color:#fff;border-color:var(--leaf)}
+main{max-width:960px;margin:auto;padding:16px 20px 48px}
+section[hidden]{display:none}
+.stage{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:4/3;max-height:70vh}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.stage .msg{position:absolute;inset:0;display:grid;place-items:center;color:#fff;text-align:center;padding:20px}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0;align-items:center}
+button.act{background:var(--leaf);color:#fff;border:0;padding:10px 18px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+button.act.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--mark);outline-offset:2px}
+input[type=text]{flex:1;min-width:200px;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
+.status{font-size:.9rem;opacity:.85}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:12px}
+.card{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--leaf);border-radius:8px;padding:12px 14px}
+.card h3{margin:0 0 4px;font-size:1.05rem}
+.card .conf{background:var(--mark);color:#12263a;border-radius:4px;padding:0 6px;font-size:.8rem;font-weight:600;margin-left:6px}
+.card p{margin:4px 0 0;font-size:.95rem}
+.quiz-q{font-size:1.15rem;margin:8px 0 14px}
+.opts{display:grid;gap:8px}
+.opts button{text-align:left;padding:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;font:inherit;cursor:pointer}
+.opts button.ok{border-color:var(--leaf);background:var(--leaf);color:#fff}
+.opts button.no{border-color:var(--red);background:var(--red);color:#fff}
+details{margin-top:16px}
+@media (prefers-reduced-motion:no-preference){.card{transition:transform .15s}.card:hover{transform:translateY(-2px)}}
+</style>
+</head>
+<body>
+<header>
+<h1>Kenali Kampus</h1>
+<p>Arahkan kamera ke benda di sekitar kampus. Aplikasi mengenalinya dan menjelaskan fungsinya.</p>
+</header>
+<nav role="tablist">
+<button role="tab" aria-selected="true" data-tab="cam">Kamera</button>
+<button role="tab" aria-selected="false" data-tab="info">Kartu info</button>
+<button role="tab" aria-selected="false" data-tab="quiz">Kuis</button>
+</nav>
+<main>
+<section id="cam">
+<div class="stage"><video id="v" playsinline muted></video><canvas id="c"></canvas><div class="msg" id="msg">Tekan "Mulai kamera" untuk memulai.</div></div>
+<div class="row">
+<button class="act" id="start">Mulai kamera</button>
+<button class="act alt" id="stop" disabled>Hentikan</button>
+<button class="act alt" id="flip">Ganti kamera</button>
+<span class="status" id="status">Model belum dimuat.</span>
+</div>
+<div class="grid" id="live"></div>
+<details>
+<summary>Model buatan sendiri (Teachable Machine)</summary>
+<p class="status">Latih model gambar di teachablemachine.withgoogle.com, ekspor ke TensorFlow.js (Upload), lalu tempel tautan modelnya. Contoh: https://teachablemachine.withgoogle.com/models/XXXX/</p>
+<div class="row"><input type="text" id="tmurl" placeholder="Tautan model Teachable Machine"><button class="act alt" id="tmload">Muat model</button></div>
+<p class="status" id="tmstatus"></p>
+</details>
+</section>
+
+<section id="info" hidden>
+<p class="status">Benda yang sudah dikenali muncul di sini. Daftar bawah ini adalah semua benda yang ada di basis pengetahuan.</p>
+<div class="grid" id="seen"></div>
+<h2>Semua benda</h2>
+<div class="grid" id="all"></div>
+</section>
+
+<section id="quiz" hidden>
+<div class="row"><span class="status" id="score">Skor 0 dari 0</span><button class="act alt" id="next">Soal berikutnya</button></div>
+<div class="quiz-q" id="qtext"></div>
+<div class="opts" id="opts"></div>
+<p id="fb" class="status" aria-live="polite"></p>
+</section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+// Basis pengetahuan: kunci = label COCO-SSD (Inggris) atau label model custom (huruf kecil)
+var KB = {
+ 'chair':['Kursi','Tempat duduk untuk mahasiswa di kelas, perpustakaan, dan kantin.'],
+ 'laptop':['Laptop','Komputer portabel untuk mengerjakan tugas, coding, dan presentasi.'],
+ 'tv':['Layar / TV','Menampilkan materi, informasi kampus, atau video pembelajaran.'],
+ 'book':['Buku','Sumber belajar cetak yang banyak dipinjam di perpustakaan.'],
+ 'bottle':['Botol minum','Wadah air minum; kampus mendorong pemakaian botol isi ulang.'],
+ 'backpack':['Tas ransel','Membawa buku, laptop, dan perlengkapan kuliah.'],
+ 'cell phone':['Ponsel','Alat komunikasi dan akses informasi akademik, misalnya portal kampus.'],
+ 'keyboard':['Keyboard','Perangkat input untuk mengetik di laboratorium komputer.'],
+ 'mouse':['Mouse','Perangkat penunjuk untuk mengendalikan kursor komputer.'],
+ 'clock':['Jam dinding','Penunjuk waktu agar kuliah dan ujian tepat waktu.'],
+ 'potted plant':['Tanaman pot','Penghijauan yang membuat lingkungan kampus lebih sejuk.'],
+ 'cup':['Gelas / cangkir','Wadah minum di kantin dan ruang dosen.'],
+ 'person':['Orang','Mahasiswa, dosen, atau staf di lingkungan kampus.'],
+ 'bench':['Bangku taman','Tempat duduk di area terbuka untuk berdiskusi dan istirahat.'],
+ 'dining table':['Meja','Permukaan untuk menulis, belajar, atau makan di kantin.'],
+ 'couch':['Sofa','Tempat duduk santai di lobi atau ruang diskusi.'],
+ 'bicycle':['Sepeda','Transportasi ramah lingkungan di area kampus.'],
+ 'motorcycle':['Sepeda motor','Kendaraan mahasiswa yang diparkir di area parkir kampus.'],
+ 'car':['Mobil','Kendaraan yang diparkir di area parkir kampus.'],
+ 'umbrella':['Payung','Pelindung dari hujan dan panas saat berjalan antar gedung.'],
+ 'apple':['Apel','Buah yang kaya serat dan vitamin C.'],
+ 'banana':['Pisang','Buah sumber energi dan kalium.'],
+ 'orange':['Jeruk','Buah sumber vitamin C.'],
+ 'proyektor':['Proyektor','Menampilkan slide materi kuliah ke layar kelas.'],
+ 'papan tulis':['Papan tulis','Media dosen menjelaskan materi dengan tulisan tangan.'],
+ 'dispenser':['Dispenser','Penyedia air minum bagi civitas kampus.'],
+ 'ac':['Pendingin ruangan (AC)','Menjaga suhu ruang kelas agar nyaman.']
+};
+var S={model:null,tm:null,tmLabels:[],stream:null,run:false,facing:'environment',seen:{}};
+var $=function(i){return document.getElementById(i)};
+var v=$('v'),c=$('c'),ctx=c.getContext('2d');
+
+// Tab
+document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){
+ document.querySelectorAll('nav button').forEach(function(x){x.setAttribute('aria-selected',x===b)});
+ ['cam','info','quiz'].forEach(function(t){$(t).hidden=t!==b.dataset.tab});
+ if(b.dataset.tab==='quiz')newQ();
+}});
+
+function card(key,conf){
+ var d=KB[key.toLowerCase()];var name=d?d[0]:key;var desc=d?d[1]:'Belum ada penjelasan untuk benda ini.';
+ var el=document.createElement('div');el.className='card';
+ var h=document.createElement('h3');h.textContent=name;
+ if(conf!=null){var s=document.createElement('span');s.className='conf';s.textContent=Math.round(conf*100)+'%';h.appendChild(s)}
+ var p=document.createElement('p');p.textContent=desc;el.appendChild(h);el.appendChild(p);return el;
+}
+function renderAll(){var g=$('all');g.textContent='';Object.keys(KB).forEach(function(k){g.appendChild(card(k))})}
+function renderSeen(){var g=$('seen');g.textContent='';var ks=Object.keys(S.seen);
+ if(!ks.length){g.textContent='Belum ada benda terdeteksi. Buka tab Kamera dan arahkan ke sebuah benda.';return}
+ ks.forEach(function(k){g.appendChild(card(k,S.seen[k]))})}
+renderAll();renderSeen();
+
+async function loadCoco(){
+ if(S.model)return;
+ $('status').textContent='Memuat model COCO-SSD...';
+ S.model=await cocoSsd.load({base:'lite_mobilenet_v2'});
+ $('status').textContent='Model siap.';
+}
+async function openCam(){
+ if(S.stream)S.stream.getTracks().forEach(function(t){t.stop()});
+ S.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:S.facing},audio:false});
+ v.srcObject=S.stream;await v.play();
+ c.width=v.videoWidth;c.height=v.videoHeight;
+}
+$('start').onclick=async function(){
+ try{
+  $('msg').textContent='Memuat...';$('start').disabled=true;
+  await loadCoco();await openCam();
+  $('msg').hidden=true;$('stop').disabled=false;S.run=true;loop();
+ }catch(e){
+  $('msg').hidden=false;$('start').disabled=false;
+  $('msg').textContent='Kamera atau model gagal dimuat. Izinkan akses kamera dan buka lewat HTTPS atau localhost. ('+e.name+')';
+ }
+};
+$('stop').onclick=function(){
+ S.run=false;if(S.stream)S.stream.getTracks().forEach(function(t){t.stop()});
+ ctx.clearRect(0,0,c.width,c.height);$('msg').hidden=false;$('msg').textContent='Kamera dihentikan.';
+ $('start').disabled=false;$('stop').disabled=true;
+};
+$('flip').onclick=async function(){
+ S.facing=S.facing==='environment'?'user':'environment';
+ if(S.run){try{await openCam()}catch(e){$('status').textContent='Tidak bisa ganti kamera.'}}
+};
+
+function note(label,conf){
+ if(!S.seen[label]||S.seen[label]<conf){S.seen[label]=conf}
+}
+async function loop(){
+ if(!S.run)return;
+ var preds=await S.model.detect(v,10);
+ ctx.clearRect(0,0,c.width,c.height);
+ var live=$('live');live.textContent='';var shown={};
+ ctx.lineWidth=Math.max(3,c.width/200);ctx.font='bold '+Math.max(16,c.width/40)+'px sans-serif';
+ preds.forEach(function(p){
+  if(p.score<0.5)return;
+  var b=p.bbox,name=(KB[p.class]||[p.class])[0];
+  ctx.strokeStyle='#f2c94c';ctx.strokeRect(b[0],b[1],b[2],b[3]);
+  var t=name+' '+Math.round(p.score*100)+'%',w=ctx.measureText(t).width+10,h=Math.max(22,c.width/32);
+  ctx.fillStyle='#f2c94c';ctx.fillRect(b[0],Math.max(0,b[1]-h),w,h);
+  ctx.fillStyle='#12263a';ctx.fillText(t,b[0]+5,Math.max(h-6,b[1]-6));
+  note(p.class,p.score);
+  if(!shown[p.class]){shown[p.class]=1;live.appendChild(card(p.class,p.score))}
+ });
+ if(S.tm){
+  var out=tf.tidy(function(){
+   var x=tf.browser.fromPixels(v).resizeBilinear([224,224]).toFloat().div(127).sub(1).expandDims(0);
+   return S.tm.predict(x);
+  });
+  var arr=await out.data();out.dispose();
+  var best=0;for(var i=1;i<arr.length;i++){if(arr[i]>arr[best])best=i}
+  if(arr[best]>0.8){var lb=S.tmLabels[best];note(lb,arr[best]);live.appendChild(card(lb,arr[best]))}
+ }
+ renderSeenThrottle();
+ requestAnimationFrame(loop);
+}
+var lastR=0;function renderSeenThrottle(){var n=Date.now();if(n-lastR>1500){lastR=n;renderSeen()}}
+
+// Model Teachable Machine (format TensorFlow.js, model gambar)
+$('tmload').onclick=async function(){
+ var u=$('tmurl').value.trim();if(!u)return;if(u.slice(-1)!=='/')u+='/';
+ $('tmstatus').textContent='Memuat model...';
+ try{
+  var meta=await (await fetch(u+'metadata.json')).json();
+  S.tmLabels=meta.labels;S.tm=await tf.loadLayersModel(u+'model.json');
+  $('tmstatus').textContent='Model siap dengan '+S.tmLabels.length+' kelas: '+S.tmLabels.join(', ')+'.';
+ }catch(e){S.tm=null;$('tmstatus').textContent='Gagal memuat model. Periksa tautan dan pastikan model diekspor sebagai TensorFlow.js.'}
+};
+
+// Kuis: deskripsi fungsi -> nama benda
+var cur=null,tot=0,ok=0;
+function shuffle(a){return a.sort(function(){return Math.random()-.5})}
+function newQ(){
+ var keys=Object.keys(KB);var k=keys[Math.floor(Math.random()*keys.length)];cur=k;
+ var wrong=shuffle(keys.filter(function(x){return x!==k})).slice(0,3);
+ var opts=shuffle([k].concat(wrong));
+ $('qtext').textContent='Benda apa ini? '+KB[k][1];$('fb').textContent='';
+ var o=$('opts');o.textContent='';
+ opts.forEach(function(x){var b=document.createElement('button');b.textContent=KB[x][0];
+  b.onclick=function(){answer(x,b)};o.appendChild(b)});
+}
+function answer(x,btn){
+ if(!cur)return;tot++;
+ var all=$('opts').querySelectorAll('button');all.forEach(function(b){b.disabled=true});
+ if(x===cur){ok++;btn.className='ok';$('fb').textContent='Benar.'}
+ else{btn.className='no';$('fb').textContent='Kurang tepat. Jawaban yang benar: '+KB[cur][0]+'.';
+  all.forEach(function(b){if(b.textContent===KB[cur][0])b.className='ok'})}
+ cur=null;$('score').textContent='Skor '+ok+' dari '+tot;
+}
+$('next').onclick=newQ;
+</script>
+</body>
+</html>
